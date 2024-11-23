@@ -1,14 +1,20 @@
+#include <ncurses.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
+
+// TODO: File organsiation. This stuff should definitely be split up
 
 #define DATA_FILE "/.cash"
 
 typedef struct {
     uint64_t money;
+    time_t dailyRewardClaimed;
 } PersistentData;
 
 FILE* open_data_file(const char* mode)
@@ -49,7 +55,7 @@ void save_persistent_data(PersistentData* data)
 }
 
 typedef enum {
-    OK = 0,
+    NO_ERROR = 0, // Don't rename to OK because ncurses uses it
     ERROR = 1,
     // TODO: probably use a better code
     EXEC_FAILED = 99
@@ -65,7 +71,7 @@ ErrorCode child_status(pid_t pid)
     }
 
     int exitCode = WEXITSTATUS(status);
-    if (exitCode == EXEC_FAILED || exitCode == OK) {
+    if (exitCode == EXEC_FAILED || exitCode == NO_ERROR) {
         return exitCode;
     }
 
@@ -89,6 +95,7 @@ ErrorCode exec_gamble(char** argv, PersistentData* data)
         fprintf(stderr, "Failed to execute command.\n");
     } else if (status == ERROR) {
         fprintf(stderr, "Command failed!\n");
+        // TODO: we shouldn't be allowing the user to gamble in the first place if they don't have enough money
         if (data->money < 10L) {
             data->money = 0;
         } else {
@@ -106,6 +113,75 @@ ErrorCode exec_gamble(char** argv, PersistentData* data)
     return status;
 }
 
+typedef struct {
+    const char* text;
+    int width; // For highlighted background
+    int y;
+    int x; // x coord of the first character
+} Button;
+
+const char* const MENU_BUTTONS[] = { "Daily Reward", "Quit" };
+const size_t MENU_BUTTONS_COUNT = sizeof(MENU_BUTTONS) / sizeof(char*);
+
+/**
+ * Create a dynamically allocated array of buttons that are displayed right underneath each other.
+ *
+ * texts: The content of the buttons.
+ * count: The number of buttons.
+ * y: The y coordinate of the first button.
+ * x: The x coordinate of the first button.
+ */
+Button* create_vertical_buttons(const char* const* texts, int count, int y, int x)
+{
+    Button* buttons = malloc(count * sizeof(Button));
+    int maxWidth = 0;
+
+    for (int i = 0; i < count; i++) {
+        buttons[i].text = texts[i];
+        buttons[i].y = y + i;
+        buttons[i].x = x;
+        int length = strlen(texts[i]);
+        if (length > maxWidth) {
+            maxWidth = length;
+        }
+    }
+
+    for (int i = 0; i < count; i++) {
+        buttons[i].width = maxWidth;
+    }
+
+    return buttons;
+}
+
+void draw_button(const Button* button, bool selected)
+{
+    if (selected) {
+        attron(A_REVERSE); // Highlight background
+    }
+
+    // Print button text with right padding
+    mvprintw(button->y, button->x, " %-*s ", button->width, button->text);
+
+    if (selected) {
+        attroff(A_REVERSE); // Turn off highlight
+    }
+}
+
+bool key_up(int key)
+{
+    return key == KEY_UP || key == 'k';
+}
+
+bool key_down(int key)
+{
+    return key == KEY_DOWN || key == 'j';
+}
+
+bool key_select(int key)
+{
+    return key == '\n' || key == KEY_ENTER || key == ' ';
+}
+
 int main(int argc, char** argv)
 {
     PersistentData data = get_persistent_data();
@@ -116,5 +192,37 @@ int main(int argc, char** argv)
     }
 
     // Normal gambling stuff here
+    // NOTE: at some point exec_gamble should be using ncurses as well
+    initscr();
+    curs_set(0); // Hide cursor
+    noecho(); // Don't show user input
+    keypad(stdscr, true); // Enable arrow keys
+
+    size_t selected = 0;
+
+    Button* buttons = create_vertical_buttons(MENU_BUTTONS, MENU_BUTTONS_COUNT, 15, 1);
+    for (size_t i = 0; i < MENU_BUTTONS_COUNT; i++) {
+        draw_button(&buttons[i], i == selected);
+    }
+
+    int key;
+    while (true) {
+        key = getch();
+
+        if (key_up(key) && selected > 0) {
+            draw_button(&buttons[selected], false);
+            selected--;
+            draw_button(&buttons[selected], true);
+        } else if (key_down(key) && selected < MENU_BUTTONS_COUNT - 1) {
+            draw_button(&buttons[selected], false);
+            selected++;
+            draw_button(&buttons[selected], true);
+        } else if (key_select(key)) {
+            break;
+        }
+    }
+
+    free(buttons);
+    endwin();
     return 0;
 }
