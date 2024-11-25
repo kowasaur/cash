@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include "games/coinflip.c"
 
 // TODO: File organsiation. This stuff should definitely be split up
 
@@ -78,6 +79,7 @@ ErrorCode child_status(pid_t pid)
     return ERROR;
 }
 
+// TODO: Move to separate file like with coinflip
 // Gambling program execution
 ErrorCode exec_gamble(char** argv, PersistentData* data)
 {
@@ -88,6 +90,25 @@ ErrorCode exec_gamble(char** argv, PersistentData* data)
         execvp(argv[0], argv);
         exit(EXEC_FAILED);
     }
+    
+    // Test gambling using coinflip for now
+    int result = coinflip();
+    if (result == 0) {
+        // TODO: we shouldn't be allowing the user to gamble in the first place if they don't have enough money
+        if (data->money < 10L) {
+            data->money = 0;
+        } else {
+            data->money -= 10;
+        }
+        fprintf(stderr, "You lost $10.\n");
+    } else {
+        data->money += 10;
+        printf("You won $10.\n");
+    }
+
+    save_persistent_data(data);
+
+    return result;
 
     ErrorCode status = child_status(pid);
 
@@ -120,7 +141,8 @@ typedef struct {
     int x; // x coord of the first character
 } Button;
 
-const char* const MENU_BUTTONS[] = { "Daily Reward", "Quit" };
+// TODO: This should be dynamically loaded from games file
+const char* const MENU_BUTTONS[] = { "Daily Reward", "Coin Flip", "Quit" };
 const size_t MENU_BUTTONS_COUNT = sizeof(MENU_BUTTONS) / sizeof(char*);
 
 /**
@@ -208,7 +230,6 @@ int main(int argc, char** argv)
     int key;
     while (true) {
         key = getch();
-
         if (key_up(key) && selected > 0) {
             draw_button(&buttons[selected], false);
             selected--;
@@ -218,7 +239,11 @@ int main(int argc, char** argv)
             selected++;
             draw_button(&buttons[selected], true);
         } else if (key_select(key)) {
-            break;
+            if (selected == 1) {
+                exec_gamble(argv, &data);
+            } else {
+                break;
+            }
         }
     }
 

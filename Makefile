@@ -1,7 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -std=gnu17
-
-LDFLAGS = -lncurses
+CFLAGS = -Wall -Wextra -pedantic -std=gnu17 -I/usr/include
+LDFLAGS = -lncursesw -ltinfo
 
 .DEFAULT_GOAL := cash
 
