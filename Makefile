@@ -4,11 +4,17 @@ LDFLAGS = -lncursesw -ltinfo
 
 .DEFAULT_GOAL := cash
 
+SRCS = main.c deck.c
+OBJS = $(SRCS:.c=.o)
+
+cash: $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
+
 debug: CFLAGS += -g
 debug: clean cash
 
-cash: main.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o cash main.c 
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f cash
+	rm -f $(OBJS) cash
